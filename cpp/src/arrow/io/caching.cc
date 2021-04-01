@@ -185,10 +185,21 @@ Result<std::shared_ptr<Buffer>> ReadRangeCache::CacheRange(
 
   if (!cache_hit || !cache_valid) {
     // read column chunk from HDFS
-    ARROW_ASSIGN_OR_RAISE(data, file->ReadAt(range.offset, range.length));
+    data = cache_manager->allocateFileRange(range);
 
-    // cache chunk data
-    cache_manager->cacheFileRange(range, data);
+    if (data != nullptr) {
+      // read data into cache manager's buffer directly
+      file->ReadAt(range.offset, range.length, data->mutable_data());
+
+      // notify cache manager that data reading is done
+      cache_manager->finishFileRange(range);
+    } else {
+      // allocate a new buffer and read data into it
+      ARROW_ASSIGN_OR_RAISE(data, file->ReadAt(range.offset, range.length));
+
+      // cache chunk data
+      cache_manager->cacheFileRange(range, data);
+    }
   }
 
   return data;

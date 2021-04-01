@@ -228,11 +228,24 @@ class SerializedRowGroup : public RowGroupReader::Contents {
 
     if (!cache_hit || !cache_valid) {
       // read column chunk from HDFS
-      stream = properties_.GetStream(source_, col_range.offset, col_range.length);
+      std::shared_ptr<Buffer> data = cache_manager->allocateFileRange(col_range);
+      if (data != nullptr) {
+        // read data into cache manager's buffer directly
+        source_->ReadAt(col_range.offset, col_range.length, data->mutable_data());
 
-      // cache chunk data
-      cache_manager->cacheFileRange(col_range,
-        std::dynamic_pointer_cast<::arrow::io::BufferReader>(stream)->buffer());
+        // notify cache manager that data reading is done
+        cache_manager->finishFileRange(col_range);
+        
+        // create a stream to return
+        stream = std::make_shared<::arrow::io::BufferReader>(data);
+      } else {
+        // allocate a new buffer and read data into it
+        stream = properties_.GetStream(source_, col_range.offset, col_range.length);
+
+        // cache chunk data
+        cache_manager->cacheFileRange(col_range,
+          std::dynamic_pointer_cast<::arrow::io::BufferReader>(stream)->buffer());
+      }
     }
 
     return stream;
