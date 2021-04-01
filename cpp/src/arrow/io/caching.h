@@ -78,6 +78,8 @@ class ARROW_EXPORT CacheManager {
   virtual std::shared_ptr<Buffer> getFileRange(::arrow::io::ReadRange range) = 0;
   virtual bool cacheFileRange(::arrow::io::ReadRange range, std::shared_ptr<Buffer> data) = 0;
   virtual bool deleteFileRange(::arrow::io::ReadRange range) = 0;
+  virtual std::shared_ptr<Buffer> allocateFileRange(::arrow::io::ReadRange range) = 0;
+  virtual bool finishFileRange(::arrow::io::ReadRange range) = 0;
 };
 
 class ARROW_EXPORT CacheManagerProvider {
