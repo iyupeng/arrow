@@ -334,17 +334,16 @@ std::shared_ptr<Page> SerializedPageReader::NextPage() {
     std::shared_ptr<Buffer> cached_page_buffer = nullptr;
     int page_index = current_page_index_++;
     if (cache_manager_provider_ != nullptr) {
-      auto cache_range = ::arrow::io::ReadRange{column_index_, page_index};
       auto cache_manager = cache_manager_provider_->defaultCacheManager();
-      bool cache_hit = cache_manager->containsFileRange(cache_range);
+      bool cache_hit = cache_manager->containsColumnPage(column_index_, page_index);
 
       if (cache_hit) {
-        std::shared_ptr<Buffer> data = cache_manager->getFileRange(cache_range);
+        std::shared_ptr<Buffer> data = cache_manager->getColumnPage(column_index_, page_index);
         if (data) {
           cached_page_buffer = data;
         } else {
           // delete invalid cache
-          cache_manager->deleteFileRange(cache_range);
+          cache_manager->deleteColumnPage(column_index_, page_index);
         }
       }
     }
@@ -441,9 +440,8 @@ std::shared_ptr<Page> SerializedPageReader::NextPage() {
 
         // cache buffer
         if (cache_manager_provider_ != nullptr) {
-          auto cache_range = ::arrow::io::ReadRange{column_index_, page_index};
           auto cache_manager = cache_manager_provider_->defaultCacheManager();
-          cache_manager->cacheFileRange(cache_range, page_buffer);
+          cache_manager->cacheColumnPage(column_index_, page_index, page_buffer);
         }
       }
 
@@ -467,9 +465,8 @@ std::shared_ptr<Page> SerializedPageReader::NextPage() {
 
         // cache buffer
         if (cache_manager_provider_ != nullptr) {
-          auto cache_range = ::arrow::io::ReadRange{column_index_, page_index};
           auto cache_manager = cache_manager_provider_->defaultCacheManager();
-          cache_manager->cacheFileRange(cache_range, page_buffer);
+          cache_manager->cacheColumnPage(column_index_, page_index, page_buffer);
         }
       }
 
@@ -510,9 +507,8 @@ std::shared_ptr<Page> SerializedPageReader::NextPage() {
 
         // cache buffer
         if (cache_manager_provider_ != nullptr) {
-          auto cache_range = ::arrow::io::ReadRange{column_index_, page_index};
           auto cache_manager = cache_manager_provider_->defaultCacheManager();
-          cache_manager->cacheFileRange(cache_range, page_buffer);
+          cache_manager->cacheColumnPage(column_index_, page_index, page_buffer);
         }
       }
 

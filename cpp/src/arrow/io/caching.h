@@ -78,6 +78,11 @@ class ARROW_EXPORT CacheManager {
   virtual std::shared_ptr<Buffer> getFileRange(::arrow::io::ReadRange range) = 0;
   virtual bool cacheFileRange(::arrow::io::ReadRange range, std::shared_ptr<Buffer> data) = 0;
   virtual bool deleteFileRange(::arrow::io::ReadRange range) = 0;
+
+  virtual bool containsColumnPage(int32_t column_index, int32_t page_index) = 0;
+  virtual std::shared_ptr<Buffer> getColumnPage(int32_t column_index, int32_t page_index) = 0;
+  virtual bool cacheColumnPage(int32_t column_index, int32_t page_index, std::shared_ptr<Buffer> data) = 0;
+  virtual bool deleteColumnPage(int32_t column_index, int32_t page_index) = 0;
 };
 
 class ARROW_EXPORT CacheManagerProvider {
