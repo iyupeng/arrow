@@ -214,7 +214,8 @@ class SerializedPageReader : public PageReader {
   SerializedPageReader(std::shared_ptr<ArrowInputStream> stream, int64_t total_num_rows,
                        Compression::type codec,
                        std::shared_ptr<CacheManagerProvider> cache_manager_provider,
-                       int32_t column_index,
+                       int32_t group_ordinal,
+                       int32_t column_ordinal,
                        ::arrow::MemoryPool* pool,
                        const CryptoContext* crypto_ctx)
       : stream_(std::move(stream)),
@@ -224,7 +225,8 @@ class SerializedPageReader : public PageReader {
         total_num_rows_(total_num_rows),
         decryption_buffer_(AllocateBuffer(pool, 0)),
         cache_manager_provider_(cache_manager_provider),
-        column_index_(column_index) {
+        group_ordinal_(group_ordinal),
+        column_ordinal_(column_ordinal) {
     if (crypto_ctx != nullptr) {
       crypto_ctx_ = *crypto_ctx;
       InitDecryption();
@@ -289,8 +291,9 @@ class SerializedPageReader : public PageReader {
 
   // for page caching
   std::shared_ptr<CacheManagerProvider> cache_manager_provider_;
-  int32_t column_index_;
-  int32_t current_page_index_ = 0;
+  int32_t group_ordinal_;
+  int32_t column_ordinal_;
+  int32_t current_page_ordinal_ = 0;
 };
 
 void SerializedPageReader::InitDecryption() {
@@ -332,18 +335,20 @@ std::shared_ptr<Page> SerializedPageReader::NextPage() {
 
     // get uncompressed buffer from cache
     std::shared_ptr<Buffer> cached_page_buffer = nullptr;
-    int page_index = current_page_index_++;
+    int page_ordinal = current_page_ordinal_++;
     if (cache_manager_provider_ != nullptr) {
       auto cache_manager = cache_manager_provider_->defaultCacheManager();
-      bool cache_hit = cache_manager->containsColumnPage(column_index_, page_index);
+      bool cache_hit = cache_manager->containsColumnPage(
+        group_ordinal_, column_ordinal_, page_ordinal);
 
       if (cache_hit) {
-        std::shared_ptr<Buffer> data = cache_manager->getColumnPage(column_index_, page_index);
+        std::shared_ptr<Buffer> data =
+          cache_manager->getColumnPage(group_ordinal_, column_ordinal_, page_ordinal);
         if (data) {
           cached_page_buffer = data;
         } else {
           // delete invalid cache
-          cache_manager->deleteColumnPage(column_index_, page_index);
+          cache_manager->deleteColumnPage(group_ordinal_, column_ordinal_, page_ordinal);
         }
       }
     }
@@ -441,7 +446,8 @@ std::shared_ptr<Page> SerializedPageReader::NextPage() {
         // cache buffer
         if (cache_manager_provider_ != nullptr) {
           auto cache_manager = cache_manager_provider_->defaultCacheManager();
-          cache_manager->cacheColumnPage(column_index_, page_index, page_buffer);
+          cache_manager->cacheColumnPage(
+            group_ordinal_, column_ordinal_, page_ordinal, page_buffer);
         }
       }
 
@@ -466,7 +472,8 @@ std::shared_ptr<Page> SerializedPageReader::NextPage() {
         // cache buffer
         if (cache_manager_provider_ != nullptr) {
           auto cache_manager = cache_manager_provider_->defaultCacheManager();
-          cache_manager->cacheColumnPage(column_index_, page_index, page_buffer);
+          cache_manager->cacheColumnPage(
+            group_ordinal_, column_ordinal_, page_ordinal, page_buffer);
         }
       }
 
@@ -508,7 +515,8 @@ std::shared_ptr<Page> SerializedPageReader::NextPage() {
         // cache buffer
         if (cache_manager_provider_ != nullptr) {
           auto cache_manager = cache_manager_provider_->defaultCacheManager();
-          cache_manager->cacheColumnPage(column_index_, page_index, page_buffer);
+          cache_manager->cacheColumnPage(
+            group_ordinal_, column_ordinal_, page_ordinal, page_buffer);
         }
       }
 
@@ -562,12 +570,13 @@ std::unique_ptr<PageReader> PageReader::Open(std::shared_ptr<ArrowInputStream> s
                                              int64_t total_num_rows,
                                              Compression::type codec,
                                              std::shared_ptr<CacheManagerProvider> cache_manager_provider,
-                                             int32_t column_index,
+                                             int32_t group_ordinal,
+                                             int32_t column_ordinal,
                                              ::arrow::MemoryPool* pool,
                                              const CryptoContext* ctx) {
   return std::unique_ptr<PageReader>(
       new SerializedPageReader(
-        std::move(stream), total_num_rows, codec, cache_manager_provider, column_index, pool, ctx));
+        std::move(stream), total_num_rows, codec, cache_manager_provider, group_ordinal, column_ordinal, pool, ctx));
 }
 
 namespace {

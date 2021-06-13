@@ -111,7 +111,8 @@ class PARQUET_EXPORT PageReader {
       std::shared_ptr<ArrowInputStream> stream, int64_t total_num_rows,
       Compression::type codec,
       std::shared_ptr<CacheManagerProvider> cache_manager_provider = nullptr,
-      int32_t column_index = 0,
+      int32_t group_ordinal = 0,
+      int32_t column_ordinal = 0,
       ::arrow::MemoryPool* pool = ::arrow::default_memory_pool(),
       const CryptoContext* ctx = NULLPTR);
 
