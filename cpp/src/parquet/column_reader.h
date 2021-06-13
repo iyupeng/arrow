@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "arrow/io/caching.h"
 #include "parquet/exception.h"
 #include "parquet/level_conversion.h"
 #include "parquet/platform.h"
@@ -44,6 +45,10 @@ class RleDecoder;
 }  // namespace arrow
 
 namespace parquet {
+
+
+using CacheManager = ::arrow::io::internal::CacheManager;
+using CacheManagerProvider = ::arrow::io::internal::CacheManagerProvider;
 
 class Decryptor;
 class Page;
@@ -104,7 +109,10 @@ class PARQUET_EXPORT PageReader {
 
   static std::unique_ptr<PageReader> Open(
       std::shared_ptr<ArrowInputStream> stream, int64_t total_num_rows,
-      Compression::type codec, ::arrow::MemoryPool* pool = ::arrow::default_memory_pool(),
+      Compression::type codec,
+      std::shared_ptr<CacheManagerProvider> cache_manager_provider = nullptr,
+      int32_t column_index = 0,
+      ::arrow::MemoryPool* pool = ::arrow::default_memory_pool(),
       const CryptoContext* ctx = NULLPTR);
 
   // @returns: shared_ptr<Page>(nullptr) on EOS, std::shared_ptr<Page>

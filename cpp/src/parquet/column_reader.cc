@@ -212,14 +212,19 @@ EncodedStatistics ExtractStatsFromHeader(const H& header) {
 class SerializedPageReader : public PageReader {
  public:
   SerializedPageReader(std::shared_ptr<ArrowInputStream> stream, int64_t total_num_rows,
-                       Compression::type codec, ::arrow::MemoryPool* pool,
+                       Compression::type codec,
+                       std::shared_ptr<CacheManagerProvider> cache_manager_provider,
+                       int32_t column_index,
+                       ::arrow::MemoryPool* pool,
                        const CryptoContext* crypto_ctx)
       : stream_(std::move(stream)),
         decompression_buffer_(AllocateBuffer(pool, 0)),
         page_ordinal_(0),
         seen_num_rows_(0),
         total_num_rows_(total_num_rows),
-        decryption_buffer_(AllocateBuffer(pool, 0)) {
+        decryption_buffer_(AllocateBuffer(pool, 0)),
+        cache_manager_provider_(cache_manager_provider),
+        column_index_(column_index) {
     if (crypto_ctx != nullptr) {
       crypto_ctx_ = *crypto_ctx;
       InitDecryption();
@@ -281,6 +286,11 @@ class SerializedPageReader : public PageReader {
   std::string data_page_header_aad_;
   // Encryption
   std::shared_ptr<ResizableBuffer> decryption_buffer_;
+
+  // for page caching
+  std::shared_ptr<CacheManagerProvider> cache_manager_provider_;
+  int32_t column_index_;
+  int32_t current_page_index_ = 0;
 };
 
 void SerializedPageReader::InitDecryption() {
@@ -319,6 +329,26 @@ std::shared_ptr<Page> SerializedPageReader::NextPage() {
   // finding a page that we do know what to do with
 
   while (seen_num_rows_ < total_num_rows_) {
+
+    // get uncompressed buffer from cache
+    std::shared_ptr<Buffer> cached_page_buffer = nullptr;
+    int page_index = current_page_index_++;
+    if (cache_manager_provider_ != nullptr) {
+      auto cache_range = ::arrow::io::ReadRange{column_index_, page_index};
+      auto cache_manager = cache_manager_provider_->defaultCacheManager();
+      bool cache_hit = cache_manager->containsFileRange(cache_range);
+
+      if (cache_hit) {
+        std::shared_ptr<Buffer> data = cache_manager->getFileRange(cache_range);
+        if (data) {
+          cached_page_buffer = data;
+        } else {
+          // delete invalid cache
+          cache_manager->deleteFileRange(cache_range);
+        }
+      }
+    }
+
     uint32_t header_size = 0;
     uint32_t allowed_page_size = kDefaultPageHeaderSize;
 
@@ -366,23 +396,30 @@ std::shared_ptr<Page> SerializedPageReader::NextPage() {
                        data_page_aad_);
     }
 
-    // Read the compressed data page.
-    PARQUET_ASSIGN_OR_THROW(auto page_buffer, stream_->Read(compressed_len));
-    if (page_buffer->size() != compressed_len) {
-      std::stringstream ss;
-      ss << "Page was smaller (" << page_buffer->size() << ") than expected ("
-         << compressed_len << ")";
-      ParquetException::EofException(ss.str());
-    }
 
-    // Decrypt it if we need to
-    if (crypto_ctx_.data_decryptor != nullptr) {
-      PARQUET_THROW_NOT_OK(decryption_buffer_->Resize(
-          compressed_len - crypto_ctx_.data_decryptor->CiphertextSizeDelta(), false));
-      compressed_len = crypto_ctx_.data_decryptor->Decrypt(
-          page_buffer->data(), compressed_len, decryption_buffer_->mutable_data());
+    auto page_buffer = cached_page_buffer;
+    if (page_buffer == nullptr) {
+      // Read the compressed data page.
+      PARQUET_ASSIGN_OR_THROW(page_buffer, stream_->Read(compressed_len));
+      if (page_buffer->size() != compressed_len) {
+        std::stringstream ss;
+        ss << "Page was smaller (" << page_buffer->size() << ") than expected ("
+          << compressed_len << ")";
+        ParquetException::EofException(ss.str());
+      }
 
-      page_buffer = decryption_buffer_;
+      // Decrypt it if we need to
+      if (crypto_ctx_.data_decryptor != nullptr) {
+        PARQUET_THROW_NOT_OK(decryption_buffer_->Resize(
+            compressed_len - crypto_ctx_.data_decryptor->CiphertextSizeDelta(), false));
+        compressed_len = crypto_ctx_.data_decryptor->Decrypt(
+            page_buffer->data(), compressed_len, decryption_buffer_->mutable_data());
+
+        page_buffer = decryption_buffer_;
+      }
+    } else {
+      // Advance the stream offset
+      PARQUET_THROW_NOT_OK(stream_->Advance(compressed_len));
     }
 
     const PageType::type page_type = LoadEnumSafe(&current_page_header_.type);
@@ -397,9 +434,18 @@ std::shared_ptr<Page> SerializedPageReader::NextPage() {
         throw ParquetException("Invalid page header (negative number of values)");
       }
 
-      // Uncompress if needed
-      page_buffer =
-          DecompressIfNeeded(std::move(page_buffer), compressed_len, uncompressed_len);
+      if (cached_page_buffer == nullptr) {
+        // Uncompress if needed
+        page_buffer =
+            DecompressIfNeeded(std::move(page_buffer), compressed_len, uncompressed_len);
+
+        // cache buffer
+        if (cache_manager_provider_ != nullptr) {
+          auto cache_range = ::arrow::io::ReadRange{column_index_, page_index};
+          auto cache_manager = cache_manager_provider_->defaultCacheManager();
+          cache_manager->cacheFileRange(cache_range, page_buffer);
+        }
+      }
 
       return std::make_shared<DictionaryPage>(page_buffer, dict_header.num_values,
                                               LoadEnumSafe(&dict_header.encoding),
@@ -414,9 +460,18 @@ std::shared_ptr<Page> SerializedPageReader::NextPage() {
       EncodedStatistics page_statistics = ExtractStatsFromHeader(header);
       seen_num_rows_ += header.num_values;
 
-      // Uncompress if needed
-      page_buffer =
-          DecompressIfNeeded(std::move(page_buffer), compressed_len, uncompressed_len);
+      if (cached_page_buffer == nullptr) {
+        // Uncompress if needed
+        page_buffer =
+            DecompressIfNeeded(std::move(page_buffer), compressed_len, uncompressed_len);
+
+        // cache buffer
+        if (cache_manager_provider_ != nullptr) {
+          auto cache_range = ::arrow::io::ReadRange{column_index_, page_index};
+          auto cache_manager = cache_manager_provider_->defaultCacheManager();
+          cache_manager->cacheFileRange(cache_range, page_buffer);
+        }
+      }
 
       return std::make_shared<DataPageV1>(page_buffer, header.num_values,
                                           LoadEnumSafe(&header.encoding),
@@ -444,11 +499,21 @@ std::shared_ptr<Page> SerializedPageReader::NextPage() {
                           header.repetition_levels_byte_length, &levels_byte_len)) {
         throw ParquetException("Levels size too large (corrupt file?)");
       }
-      // DecompressIfNeeded doesn't take `is_compressed` into account as
-      // it's page type-agnostic.
-      if (is_compressed) {
-        page_buffer = DecompressIfNeeded(std::move(page_buffer), compressed_len,
-                                         uncompressed_len, levels_byte_len);
+
+      if (cached_page_buffer == nullptr) {
+        // DecompressIfNeeded doesn't take `is_compressed` into account as
+        // it's page type-agnostic.
+        if (is_compressed) {
+          page_buffer = DecompressIfNeeded(std::move(page_buffer), compressed_len,
+                                          uncompressed_len, levels_byte_len);
+        }
+
+        // cache buffer
+        if (cache_manager_provider_ != nullptr) {
+          auto cache_range = ::arrow::io::ReadRange{column_index_, page_index};
+          auto cache_manager = cache_manager_provider_->defaultCacheManager();
+          cache_manager->cacheFileRange(cache_range, page_buffer);
+        }
       }
 
       return std::make_shared<DataPageV2>(
@@ -500,10 +565,13 @@ std::shared_ptr<Buffer> SerializedPageReader::DecompressIfNeeded(
 std::unique_ptr<PageReader> PageReader::Open(std::shared_ptr<ArrowInputStream> stream,
                                              int64_t total_num_rows,
                                              Compression::type codec,
+                                             std::shared_ptr<CacheManagerProvider> cache_manager_provider,
+                                             int32_t column_index,
                                              ::arrow::MemoryPool* pool,
                                              const CryptoContext* ctx) {
   return std::unique_ptr<PageReader>(
-      new SerializedPageReader(std::move(stream), total_num_rows, codec, pool, ctx));
+      new SerializedPageReader(
+        std::move(stream), total_num_rows, codec, cache_manager_provider, column_index, pool, ctx));
 }
 
 namespace {
