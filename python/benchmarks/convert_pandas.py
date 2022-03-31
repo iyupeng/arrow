@@ -39,6 +39,8 @@ class PandasConversionsToArrow(PandasConversionsBase):
     def time_from_series(self, n, dtype):
         pa.Table.from_pandas(self.data)
 
+    def teardown(self, *args):
+        pa.default_memory_pool().backend_name
 
 class PandasConversionsFromArrow(PandasConversionsBase):
     param_names = ('size', 'dtype')
@@ -51,6 +53,8 @@ class PandasConversionsFromArrow(PandasConversionsBase):
     def time_to_series(self, n, dtype):
         self.arrow_data.to_pandas()
 
+    def teardown(self, *args):
+        pa.default_memory_pool().backend_name
 
 class ToPandasStrings(object):
 
@@ -71,6 +75,8 @@ class ToPandasStrings(object):
     def time_to_pandas_no_dedup(self, *args):
         self.arr.to_pandas(deduplicate_objects=False)
 
+    def teardown(self, *args):
+        pa.default_memory_pool().backend_name
 
 class ZeroCopyPandasRead(object):
 
@@ -91,6 +97,8 @@ class ZeroCopyPandasRead(object):
     def time_deserialize_from_components(self):
         pa.deserialize_components(self.as_components)
 
+    def teardown(self, *args):
+        pa.default_memory_pool().backend_name
 
 class SerializeDeserializePandas(object):
 
@@ -106,6 +114,8 @@ class SerializeDeserializePandas(object):
     def time_deserialize_pandas(self):
         pa.deserialize_pandas(self.serialized)
 
+    def teardown(self, *args):
+        pa.default_memory_pool().backend_name
 
 class TableFromPandasMicroperformance(object):
     # ARROW-4629
@@ -119,3 +129,6 @@ class TableFromPandasMicroperformance(object):
     def time_Table_from_pandas(self):
         for _ in range(50):
             pa.Table.from_pandas(self.df, nthreads=1)
+
+    def teardown(self, *args):
+        pa.default_memory_pool().backend_name

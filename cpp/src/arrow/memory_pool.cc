@@ -25,6 +25,7 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <fstream>
 
 #if defined(sun) || defined(__sun)
 #include <stdlib.h>
@@ -532,6 +533,12 @@ class MimallocAllocator {
 
 int64_t MemoryPool::max_memory() const { return -1; }
 
+void write_jemalloc_stats_to_file(void *opaque, const char *str) {
+  std::ofstream outfile;
+  outfile.open("/tmp/jemalloc_heap_stats.txt", std::ios_base::app);
+  outfile << str;
+}
+
 ///////////////////////////////////////////////////////////////////////
 // MemoryPool implementation that delegates its core duty
 // to an Allocator class.
@@ -626,7 +633,10 @@ class SystemDebugMemoryPool : public BaseMemoryPoolImpl<DebugAllocator<SystemAll
 #ifdef ARROW_JEMALLOC
 class JemallocMemoryPool : public BaseMemoryPoolImpl<JemallocAllocator> {
  public:
-  std::string backend_name() const override { return "jemalloc"; }
+  std::string backend_name() const override {
+    malloc_stats_print(write_jemalloc_stats_to_file, NULL, NULL);
+    return "jemalloc";
+  }
 };
 
 class JemallocDebugMemoryPool

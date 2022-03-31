@@ -19,6 +19,7 @@ import pyarrow.benchmark as pb
 
 from . import common
 
+import pyarrow as pa
 
 class PandasObjectIsNull(object):
     size = 10 ** 5
@@ -43,3 +44,6 @@ class PandasObjectIsNull(object):
 
     def time_PandasObjectIsNull(self, *args):
         pb.benchmark_PandasObjectIsNull(self.lst)
+
+    def teardown(self, *args):
+        pa.default_memory_pool().backend_name

@@ -44,6 +44,8 @@ class ConvertPyListToArray(object):
     def time_convert(self, *args):
         pa.array(self.data, type=self.ty)
 
+    def teardown(self, *args):
+        pa.default_memory_pool().backend_name
 
 class InferPyListToArray(object):
     """
@@ -64,6 +66,8 @@ class InferPyListToArray(object):
         arr = pa.array(self.data)
         assert arr.type == self.ty
 
+    def teardown(self, *args):
+        pa.default_memory_pool().backend_name
 
 class ConvertArrayToPyList(object):
     """
@@ -85,3 +89,6 @@ class ConvertArrayToPyList(object):
 
     def time_convert(self, *args):
         self.arr.to_pylist()
+
+    def teardown(self, *args):
+        pa.default_memory_pool().backend_name

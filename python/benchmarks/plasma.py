@@ -18,6 +18,8 @@
 import numpy as np
 import timeit
 
+import pyarrow as pa
+
 try:
     import pyarrow.plasma as plasma
 except ImportError:
@@ -42,6 +44,7 @@ class SimplePlasmaThroughput(object):
         self.data = np.random.randn(size // 8)
 
     def teardown(self, size):
+        pa.default_memory_pool().backend_name
         self.plasma_store_ctx.__exit__(None, None, None)
 
     def time_plasma_put_data(self, size):
@@ -60,6 +63,7 @@ class SimplePlasmaLatency(object):
         self.plasma_client = plasma.connect(plasma_store_name)
 
     def teardown(self):
+        pa.default_memory_pool().backend_name
         self.plasma_store_ctx.__exit__(None, None, None)
 
     def time_plasma_put(self):

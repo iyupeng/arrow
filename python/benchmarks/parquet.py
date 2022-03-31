@@ -51,6 +51,7 @@ class ParquetManifestCreation(object):
         pq.write_to_dataset(output_table, self.tmpdir, ['num1'])
 
     def teardown(self, num_partitions, num_threads):
+        pa.default_memory_pool().backend_name
         if self.tmpdir is not None:
             shutil.rmtree(self.tmpdir)
 
@@ -89,6 +90,8 @@ class ParquetWriteBinary(object):
         out = pa.BufferOutputStream()
         pq.write_table(pa.table(self.table_df), out)
 
+    def teardown(self, *args):
+        pa.default_memory_pool().backend_name
 
 def generate_dict_strings(string_size, nunique, length, random_order=True):
     uniques = np.array([rands(string_size) for i in range(nunique)], dtype='O')
@@ -132,6 +135,8 @@ class ParquetWriteDictionaries(object):
     def time_write_sequential(self, nunique):
         pq.write_table(self.table_sequential, pa.BufferOutputStream())
 
+    def teardown(self, *args):
+        pa.default_memory_pool().backend_name
 
 class ParquetManyColumns(object):
 
@@ -154,3 +159,6 @@ class ParquetManyColumns(object):
 
     def time_read(self, num_cols):
         pq.read_table(self.buf)
+
+    def teardown(self, *args):
+        pa.default_memory_pool().backend_name

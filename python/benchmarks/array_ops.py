@@ -32,3 +32,6 @@ class ScalarAccess(object):
     def time_as_py(self):
         for item in self._array_items:
             item.as_py()
+
+    def teardown(self, *args):
+        pa.default_memory_pool().backend_name

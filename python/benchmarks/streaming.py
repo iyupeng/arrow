@@ -68,3 +68,6 @@ class StreamReader(object):
         reader = pa.RecordBatchStreamReader(self.source)
         table = reader.read_all()
         df = table.to_pandas()  # noqa
+
+    def teardown(self, *args):
+        pa.default_memory_pool().backend_name

@@ -87,3 +87,6 @@ class BufferedIOHighLatency(object):
         while bytes_read < self.total_size:
             buffered_reader.read(self.increment)
             bytes_read += self.increment
+
+    def teardown(self, *args):
+        pa.default_memory_pool().backend_name
